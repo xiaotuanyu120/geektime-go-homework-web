@@ -1,13 +1,11 @@
 package web
 
-import (
-	"fmt"
-	"strings"
-)
+import "fmt"
 
 func test() {
-	testStr := "/usr/home"
-	for _, s := range strings.Split(testStr, "/") {
-		fmt.Println(s)
+	testStr := ":id"
+	if string(testStr[0]) == ":" {
+		fmt.Println("yes")
 	}
+	fmt.Println(string(testStr[0]))
 }

@@ -78,11 +78,12 @@ func (h *HTTPServer) Start(addr string) error {
 }
 
 func (h *HTTPServer) Serve(ctx *Context) {
-	n, found := h.findRoute(ctx.Req.Method, ctx.Req.URL.Path)
-	if !found || n.handler == nil {
+	routeInfo, found := h.findRoute(ctx.Req.Method, ctx.Req.URL.Path)
+	if !found || routeInfo.n.handler == nil {
 		ctx.Resp.WriteHeader(404)
 		ctx.Resp.Write([]byte("NOT FOUND"))
 		return
 	}
-	n.handler(ctx)
+	ctx.PathParams = routeInfo.pathParams
+	routeInfo.n.handler(ctx)
 }

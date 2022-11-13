@@ -54,6 +54,10 @@ func TestRouter_addRoute(t *testing.T) {
 			method: http.MethodGet,
 			path:   "/*/abc/*",
 		},
+		{
+			method: http.MethodGet,
+			path:   "/order/detail/:id",
+		},
 	}
 
 	testRouter := newRouter()
@@ -86,31 +90,35 @@ func TestRouter_addRoute(t *testing.T) {
 							"detail": {
 								path:     "detail",
 								children: map[string]*node{},
-								handler:  fakeHandleFunc,
+								paramChild: &node{
+									path:    ":id",
+									handler: fakeHandleFunc,
+								},
+								handler: fakeHandleFunc,
 							},
 						},
 					},
 					"abc": {
 						path: "abc",
-						wildChild: &node{
+						wildCardChild: &node{
 							path:    "*",
 							handler: fakeHandleFunc,
 						},
 					},
 				},
-				wildChild: &node{
+				wildCardChild: &node{
 					path:    "*",
 					handler: fakeHandleFunc,
 					children: map[string]*node{
 						"abc": {
 							path: "abc",
-							wildChild: &node{
+							wildCardChild: &node{
 								path:    "*",
 								handler: fakeHandleFunc,
 							},
 						},
 					},
-					wildChild: &node{
+					wildCardChild: &node{
 						path:    "*",
 						handler: fakeHandleFunc,
 					},
@@ -174,6 +182,18 @@ func TestRouter_addRoute(t *testing.T) {
 	assert.Panicsf(t, func() {
 		r.addRoute(http.MethodGet, "/a/b/c", fakeHandleFunc)
 	}, "Route Add More Than One Time: [/a/b/c] Already added")
+
+	r = newRouter()
+	r.addRoute(http.MethodGet, "/a/*", fakeHandleFunc)
+	assert.Panicsf(t, func() {
+		r.addRoute(http.MethodGet, "/a/:id", fakeHandleFunc)
+	}, "Parameter Child and Wild Card Child only can not exist at the same time: wildCardChild * already exist!")
+
+	r = newRouter()
+	r.addRoute(http.MethodGet, "/a/:id", fakeHandleFunc)
+	assert.Panicsf(t, func() {
+		r.addRoute(http.MethodGet, "/a/*", fakeHandleFunc)
+	}, "Parameter Child and Wild Card Child only can not exist at the same time: paramChild :id already exist!")
 }
 
 func (r *router) equal(targetRouter *router) (errMsg string, equal bool) {
@@ -200,11 +220,20 @@ func (n *node) equal(targetNode *node) (errMsg string, equal bool) {
 	}
 
 	// compare wildChild node
-	if n.wildChild != nil {
-		if targetNode.wildChild == nil {
-			return "MATCH FAILED: target wildChild is nil, but real wildChild is not nil", false
+	if n.wildCardChild != nil {
+		if targetNode.wildCardChild == nil {
+			return "MATCH FAILED: target wildCardChild is nil, but real wildChild is not nil", false
 		}
-		msg, ok := n.wildChild.equal(targetNode.wildChild)
+		msg, ok := n.wildCardChild.equal(targetNode.wildCardChild)
+		return msg, ok
+	}
+
+	// compare paramChild node
+	if n.paramChild != nil {
+		if targetNode.paramChild == nil {
+			return "MATCH FAILED: target paramChild is nil, but real paramChild is not nil", false
+		}
+		msg, ok := n.paramChild.equal(targetNode.paramChild)
 		return msg, ok
 	}
 
@@ -256,6 +285,10 @@ func TestRouter_findRoute(t *testing.T) {
 			path:   "/order/detail",
 		},
 		{
+			method: http.MethodPost,
+			path:   "/order/detail/:id",
+		},
+		{
 			method: http.MethodGet,
 			path:   "/order/*",
 		},
@@ -277,16 +310,18 @@ func TestRouter_findRoute(t *testing.T) {
 		expect bool
 		method string
 		path   string
-		ret    *node
+		info   *matchInfo
 	}{
 		{
 			name:   "root",
 			expect: true,
 			method: http.MethodDelete,
 			path:   "/",
-			ret: &node{
-				path:    "/",
-				handler: fakeHandleFunc,
+			info: &matchInfo{
+				n: &node{
+					path:    "/",
+					handler: fakeHandleFunc,
+				},
 			},
 		},
 		{
@@ -294,9 +329,26 @@ func TestRouter_findRoute(t *testing.T) {
 			expect: true,
 			method: http.MethodGet,
 			path:   "/order/detail",
-			ret: &node{
-				path:    "detail",
-				handler: fakeHandleFunc,
+			info: &matchInfo{
+				n: &node{
+					path:    "detail",
+					handler: fakeHandleFunc,
+				},
+			},
+		},
+		{
+			name:   "paramChild /order/detail/:id",
+			expect: true,
+			method: http.MethodPost,
+			path:   "/order/detail/2",
+			info: &matchInfo{
+				n: &node{
+					path:    ":id",
+					handler: fakeHandleFunc,
+				},
+				pathParams: map[string]string{
+					"id": "2",
+				},
 			},
 		},
 		{
@@ -304,9 +356,11 @@ func TestRouter_findRoute(t *testing.T) {
 			expect: true,
 			method: http.MethodGet,
 			path:   "/order/abc",
-			ret: &node{
-				path:    "*",
-				handler: fakeHandleFunc,
+			info: &matchInfo{
+				n: &node{
+					path:    "*",
+					handler: fakeHandleFunc,
+				},
 			},
 		},
 		{
@@ -314,12 +368,14 @@ func TestRouter_findRoute(t *testing.T) {
 			expect: true,
 			method: http.MethodGet,
 			path:   "/order",
-			ret: &node{
-				path: "order",
-				children: map[string]*node{
-					"detail": {
-						path:    "detail",
-						handler: fakeHandleFunc,
+			info: &matchInfo{
+				n: &node{
+					path: "order",
+					children: map[string]*node{
+						"detail": {
+							path:    "detail",
+							handler: fakeHandleFunc,
+						},
 					},
 				},
 			},
@@ -341,13 +397,20 @@ func TestRouter_findRoute(t *testing.T) {
 	// Test: find route
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			node, found := testRouter.findRoute(tc.method, tc.path)
+			info, found := testRouter.findRoute(tc.method, tc.path)
+
+			// compare found result
 			assert.Equal(t, tc.expect, found)
 			if !found {
 				return
 			}
-			msg, equal := tc.ret.equal(node)
+
+			// compare node
+			msg, equal := tc.info.n.equal(info.n)
 			assert.True(t, equal, msg)
+
+			// compare pathParams
+			assert.Equal(t, tc.info.pathParams, info.pathParams)
 		})
 	}
 }

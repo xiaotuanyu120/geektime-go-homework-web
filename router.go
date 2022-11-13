@@ -11,10 +11,16 @@ type router struct {
 }
 
 type node struct {
-	path      string
-	children  map[string]*node // children path => children node
-	wildChild *node
-	handler   handleFunc
+	path     string
+	children map[string]*node // children path => children node
+
+	// wild card child: /order/detail/*
+	wildCardChild *node
+
+	// parameter child: /order/detail/:id
+	paramChild *node
+
+	handler handleFunc
 }
 
 func newRouter() *router {
@@ -74,12 +80,30 @@ func (r *router) addRoute(method string, path string, handleFunc handleFunc) {
 }
 
 func (n *node) childOrCreate(seg string) *node {
-	// go to wildChild
+	// go to wildCardChild
 	if seg == "*" {
-		if n.wildChild == nil {
-			n.wildChild = &node{path: seg}
+		if n.paramChild != nil {
+			panic(fmt.Sprintf(
+				`Parameter Child and Wild Card Child only can not exist at the same time: 
+paramChild %s already exist!`, seg))
 		}
-		return n.wildChild
+		if n.wildCardChild == nil {
+			n.wildCardChild = &node{path: seg}
+		}
+		return n.wildCardChild
+	}
+
+	// go to paramChild
+	if seg[0] == ':' {
+		if n.wildCardChild != nil {
+			panic(fmt.Sprintf(
+				`Parameter Child and Wild Card Child only can not exist at the same time: 
+wildCardChild %s already exist!`, seg))
+		}
+		if n.paramChild == nil {
+			n.paramChild = &node{path: seg}
+		}
+		return n.paramChild
 	}
 
 	// go to child
@@ -98,7 +122,12 @@ func (n *node) childOrCreate(seg string) *node {
 	return child
 }
 
-func (r *router) findRoute(method string, path string) (*node, bool) {
+type matchInfo struct {
+	n          *node
+	pathParams map[string]string
+}
+
+func (r *router) findRoute(method string, path string) (*matchInfo, bool) {
 	currentNode, ok := r.trees[method]
 	if !ok {
 		return nil, false
@@ -106,30 +135,46 @@ func (r *router) findRoute(method string, path string) (*node, bool) {
 
 	// root path
 	if path == "/" {
-		return currentNode, true
+		return &matchInfo{n: currentNode}, true
 	}
 
 	// remove first "/"
 	path2Split := path[1:]
 	segs := strings.Split(path2Split, "/")
+	var pathParams map[string]string
 	for _, seg := range segs {
-		child, found := currentNode.childOf(seg)
+		child, isParamChild, found := currentNode.childOf(seg)
 		if !found {
 			return nil, false
+		}
+		if isParamChild {
+			if pathParams == nil {
+				pathParams = make(map[string]string)
+			}
+			pathParams[child.path[1:]] = seg
 		}
 		currentNode = child
 	}
 
-	return currentNode, true
+	return &matchInfo{n: currentNode, pathParams: pathParams}, true
 }
 
-func (n *node) childOf(path string) (*node, bool) {
+func (n *node) childOf(path string) (node *node, isParamChild bool, found bool) {
+	// 1. check children
+	// 2. check paramChild
+	// at last: check wildCardChild
 	if n.children == nil {
-		return n.wildChild, n.wildChild != nil
+		if n.paramChild != nil {
+			return n.paramChild, true, true
+		}
+		return n.wildCardChild, false, n.wildCardChild != nil
 	}
 	child, ok := n.children[path]
 	if !ok {
-		return n.wildChild, n.wildChild != nil
+		if n.paramChild != nil {
+			return n.paramChild, true, true
+		}
+		return n.wildCardChild, false, n.wildCardChild != nil
 	}
-	return child, ok
+	return child, false, ok
 }
