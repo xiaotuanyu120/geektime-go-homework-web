@@ -31,6 +31,20 @@ func TestServer(t *testing.T) {
 		}
 	})
 
+	s.Get("/order/detail/:id", func(ctx *Context) {
+		_, err := ctx.Resp.Write([]byte(fmt.Sprintf("hello, /order/detail/%s", ctx.PathParams["id"])))
+		if err != nil {
+			return
+		}
+	})
+
+	s.Get("/order/detail/3", func(ctx *Context) {
+		_, err := ctx.Resp.Write([]byte("hello, /order/detail/3 (static route)"))
+		if err != nil {
+			return
+		}
+	})
+
 	s.Get("/order/*", func(ctx *Context) {
 		_, err := ctx.Resp.Write([]byte(fmt.Sprintf("hello, %s", ctx.Req.URL.Path)))
 		if err != nil {

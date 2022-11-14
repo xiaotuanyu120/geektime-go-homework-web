@@ -100,6 +100,7 @@ paramChild %s already exist!`, seg))
 				`Parameter Child and Wild Card Child only can not exist at the same time: 
 wildCardChild %s already exist!`, seg))
 		}
+
 		if n.paramChild == nil {
 			n.paramChild = &node{path: seg}
 		}
@@ -141,18 +142,36 @@ func (r *router) findRoute(method string, path string) (*matchInfo, bool) {
 	// remove first "/"
 	path2Split := path[1:]
 	segs := strings.Split(path2Split, "/")
+	// used by paramChild node
 	var pathParams map[string]string
+	// used by tail wild card node, when regular match failed, try this
+	var tailWildCardNode *node
 	for _, seg := range segs {
+		// regular match
 		child, isParamChild, found := currentNode.childOf(seg)
-		if !found {
-			return nil, false
+
+		// try to cache tail wild card node
+		wcNode, twcFound := currentNode.wildCardChildOf()
+		if twcFound {
+			tailWildCardNode = wcNode
 		}
+
+		// collect the path params in the request path
 		if isParamChild {
 			if pathParams == nil {
 				pathParams = make(map[string]string)
 			}
 			pathParams[child.path[1:]] = seg
 		}
+
+		if !found {
+			// regular match failed, then return cached tail wild card node
+			if tailWildCardNode != nil {
+				return &matchInfo{n: tailWildCardNode, pathParams: pathParams}, true
+			}
+			return nil, false
+		}
+
 		currentNode = child
 	}
 
@@ -177,4 +196,11 @@ func (n *node) childOf(path string) (node *node, isParamChild bool, found bool) 
 		return n.wildCardChild, false, n.wildCardChild != nil
 	}
 	return child, false, ok
+}
+
+func (n *node) wildCardChildOf() (node *node, found bool) {
+	if n.wildCardChild != nil {
+		return n.wildCardChild, true
+	}
+	return n.wildCardChild, false
 }

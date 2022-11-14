@@ -38,13 +38,14 @@ func TestRouter_addRoute(t *testing.T) {
 			method: http.MethodPost,
 			path:   "/login",
 		},
+		// 通配符测试用例
 		{
 			method: http.MethodGet,
-			path:   "/*",
+			path:   "/order/*",
 		},
 		{
 			method: http.MethodGet,
-			path:   "/abc/*",
+			path:   "/*",
 		},
 		{
 			method: http.MethodGet,
@@ -52,11 +53,24 @@ func TestRouter_addRoute(t *testing.T) {
 		},
 		{
 			method: http.MethodGet,
-			path:   "/*/abc/*",
+			path:   "/*/abc",
 		},
 		{
 			method: http.MethodGet,
-			path:   "/order/detail/:id",
+			path:   "/*/abc/*",
+		},
+		// 参数路由
+		{
+			method: http.MethodGet,
+			path:   "/param/:id",
+		},
+		{
+			method: http.MethodGet,
+			path:   "/param/:id/detail",
+		},
+		{
+			method: http.MethodGet,
+			path:   "/param/:id/*",
 		},
 	}
 
@@ -78,9 +92,8 @@ func TestRouter_addRoute(t *testing.T) {
 						handler: fakeHandleFunc,
 						children: map[string]*node{
 							"home": {
-								path:     "home",
-								children: map[string]*node{},
-								handler:  fakeHandleFunc,
+								path:    "home",
+								handler: fakeHandleFunc,
 							},
 						},
 					},
@@ -88,21 +101,30 @@ func TestRouter_addRoute(t *testing.T) {
 						path: "order",
 						children: map[string]*node{
 							"detail": {
-								path:     "detail",
-								children: map[string]*node{},
-								paramChild: &node{
-									path:    ":id",
-									handler: fakeHandleFunc,
-								},
+								path:    "detail",
 								handler: fakeHandleFunc,
 							},
 						},
-					},
-					"abc": {
-						path: "abc",
 						wildCardChild: &node{
 							path:    "*",
 							handler: fakeHandleFunc,
+						},
+					},
+					"param": {
+						path: "param",
+						paramChild: &node{
+							path:    "id",
+							handler: fakeHandleFunc,
+							children: map[string]*node{
+								"detail": &node{
+									path:    "detail",
+									handler: fakeHandleFunc,
+								},
+							},
+							wildCardChild: &node{
+								path:    "*",
+								handler: fakeHandleFunc,
+							},
 						},
 					},
 				},
@@ -111,7 +133,8 @@ func TestRouter_addRoute(t *testing.T) {
 					handler: fakeHandleFunc,
 					children: map[string]*node{
 						"abc": {
-							path: "abc",
+							path:    "abc",
+							handler: fakeHandleFunc,
 							wildCardChild: &node{
 								path:    "*",
 								handler: fakeHandleFunc,
@@ -131,9 +154,8 @@ func TestRouter_addRoute(t *testing.T) {
 						path: "order",
 						children: map[string]*node{
 							"create": {
-								path:     "create",
-								children: map[string]*node{},
-								handler:  fakeHandleFunc,
+								path:    "create",
+								handler: fakeHandleFunc,
 							},
 						},
 					},
@@ -271,30 +293,45 @@ func (n *node) equal(targetNode *node) (errMsg string, equal bool) {
 func TestRouter_findRoute(t *testing.T) {
 	// Construct testRouter AND Add route
 	testRoutes := []struct {
-		name   string
-		expect bool
 		method string
 		path   string
 	}{
 		{
+			method: http.MethodDelete,
+			path:   "/",
+		},
+		{
 			method: http.MethodGet,
 			path:   "/",
 		},
 		{
 			method: http.MethodGet,
-			path:   "/order/detail",
+			path:   "/user",
 		},
 		{
 			method: http.MethodPost,
-			path:   "/order/detail/:id",
+			path:   "/order/create",
 		},
 		{
 			method: http.MethodGet,
-			path:   "/order/*",
+			path:   "/user/*/home",
 		},
 		{
-			method: http.MethodDelete,
-			path:   "/",
+			method: http.MethodPost,
+			path:   "/order/*",
+		},
+		// 参数路由
+		{
+			method: http.MethodGet,
+			path:   "/param/:id",
+		},
+		{
+			method: http.MethodGet,
+			path:   "/param/:id/detail",
+		},
+		{
+			method: http.MethodGet,
+			path:   "/param/:id/*",
 		},
 	}
 
@@ -313,6 +350,18 @@ func TestRouter_findRoute(t *testing.T) {
 		info   *matchInfo
 	}{
 		{
+			name:   "method not found",
+			expect: false,
+			method: http.MethodOptions,
+			path:   "/order/detail",
+		},
+		{
+			name:   "path not found",
+			expect: false,
+			method: http.MethodGet,
+			path:   "/not/exist",
+		},
+		{
 			name:   "root",
 			expect: true,
 			method: http.MethodDelete,
@@ -325,6 +374,35 @@ func TestRouter_findRoute(t *testing.T) {
 			},
 		},
 		{
+			name:   "user",
+			expect: true,
+			method: http.MethodGet,
+			path:   "/user",
+			info: &matchInfo{
+				n: &node{
+					path:    "user",
+					handler: fakeHandleFunc,
+				},
+			},
+		},
+		{
+			name:   "no handler",
+			expect: true,
+			method: http.MethodPost,
+			path:   "/order",
+			info: &matchInfo{
+				n: &node{
+					path: "order",
+					children: map[string]*node{
+						"detail": {
+							path:    "detail",
+							handler: fakeHandleFunc,
+						},
+					},
+				},
+			},
+		},
+		{
 			name:   "depth two",
 			expect: true,
 			method: http.MethodGet,
@@ -332,6 +410,42 @@ func TestRouter_findRoute(t *testing.T) {
 			info: &matchInfo{
 				n: &node{
 					path:    "detail",
+					handler: fakeHandleFunc,
+				},
+			},
+		},
+		{
+			name:   "/order/abc > /order/*",
+			expect: true,
+			method: http.MethodPost,
+			path:   "/order/abc",
+			info: &matchInfo{
+				n: &node{
+					path:    "*",
+					handler: fakeHandleFunc,
+				},
+			},
+		},
+		{
+			name:   "wild card in middle",
+			method: http.MethodGet,
+			path:   "/user/Tom/home",
+			expect: true,
+			info: &matchInfo{
+				n: &node{
+					path:    "home",
+					handler: fakeHandleFunc,
+				},
+			},
+		},
+		{
+			name:   "tail wild card match",
+			method: http.MethodPost,
+			path:   "/order/delete/123",
+			expect: true,
+			info: &matchInfo{
+				n: &node{
+					path:    "*",
 					handler: fakeHandleFunc,
 				},
 			},
@@ -350,47 +464,6 @@ func TestRouter_findRoute(t *testing.T) {
 					"id": "2",
 				},
 			},
-		},
-		{
-			name:   "/order/abc > /order/*",
-			expect: true,
-			method: http.MethodGet,
-			path:   "/order/abc",
-			info: &matchInfo{
-				n: &node{
-					path:    "*",
-					handler: fakeHandleFunc,
-				},
-			},
-		},
-		{
-			name:   "no handler",
-			expect: true,
-			method: http.MethodGet,
-			path:   "/order",
-			info: &matchInfo{
-				n: &node{
-					path: "order",
-					children: map[string]*node{
-						"detail": {
-							path:    "detail",
-							handler: fakeHandleFunc,
-						},
-					},
-				},
-			},
-		},
-		{
-			name:   "method not found",
-			expect: false,
-			method: http.MethodOptions,
-			path:   "/order/detail",
-		},
-		{
-			name:   "path not found",
-			expect: false,
-			method: http.MethodGet,
-			path:   "/not/exist",
 		},
 	}
 
