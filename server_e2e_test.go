@@ -52,6 +52,27 @@ func TestServer(t *testing.T) {
 		}
 	})
 
+	s.Get("/user/:userid([0-9]+)", func(ctx *Context) {
+		_, err := ctx.Resp.Write([]byte(fmt.Sprintf("hello, your user id is %s", ctx.PathParams["userid"])))
+		if err != nil {
+			return
+		}
+	})
+
+	s.Get("/test/*/a", func(ctx *Context) {
+		_, err := ctx.Resp.Write([]byte(fmt.Sprintf("hello, test from /test/*/a")))
+		if err != nil {
+			return
+		}
+	})
+
+	s.Get("/test/*", func(ctx *Context) {
+		_, err := ctx.Resp.Write([]byte(fmt.Sprintf("hello, test from /test/*")))
+		if err != nil {
+			return
+		}
+	})
+
 	err := s.Start(":8080")
 	if err != nil {
 		return

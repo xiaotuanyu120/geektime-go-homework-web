@@ -72,6 +72,15 @@ func TestRouter_addRoute(t *testing.T) {
 			method: http.MethodGet,
 			path:   "/param/:id/*",
 		},
+		// 正则路由
+		{
+			method: http.MethodDelete,
+			path:   "/reg/:id(.*)",
+		},
+		{
+			method: http.MethodDelete,
+			path:   "/:name(^.+$)/abc",
+		},
 	}
 
 	testRouter := newRouter()
@@ -165,6 +174,29 @@ func TestRouter_addRoute(t *testing.T) {
 					},
 				},
 			},
+			http.MethodDelete: {
+				path: "/",
+				children: map[string]*node{
+					"reg": {
+						path: "reg",
+						regChild: &node{
+							path:      "(.*)",
+							pathParam: "id",
+							handler:   fakeHandleFunc,
+						},
+					},
+				},
+				regChild: &node{
+					path:      "(^.+$)",
+					pathParam: "name",
+					children: map[string]*node{
+						"abc": {
+							path:    "abc",
+							handler: fakeHandleFunc,
+						},
+					},
+				},
+			},
 		},
 	}
 
@@ -241,6 +273,12 @@ func (n *node) equal(targetNode *node) (errMsg string, equal bool) {
 		return fmt.Sprintf("MATCH FAILED: [path %s != %s]", n.path, targetNode.path), false
 	}
 
+	// compare pathParam
+	if n.pathParam != targetNode.pathParam {
+		return fmt.Sprintf("MATCH FAILED: [pathParam %s != %s]",
+			n.pathParam, targetNode.pathParam), false
+	}
+
 	// compare wildChild node
 	if n.wildCardChild != nil {
 		if targetNode.wildCardChild == nil {
@@ -256,6 +294,15 @@ func (n *node) equal(targetNode *node) (errMsg string, equal bool) {
 			return "MATCH FAILED: target paramChild is nil, but real paramChild is not nil", false
 		}
 		msg, ok := n.paramChild.equal(targetNode.paramChild)
+		return msg, ok
+	}
+
+	// compare regChild node
+	if n.regChild != nil {
+		if targetNode.regChild == nil {
+			return "MATCH FAILED: target regChild is nil, but real regChild is not nil", false
+		}
+		msg, ok := n.regChild.equal(targetNode.regChild)
 		return msg, ok
 	}
 
@@ -297,7 +344,7 @@ func TestRouter_findRoute(t *testing.T) {
 		path   string
 	}{
 		{
-			method: http.MethodDelete,
+			method: http.MethodConnect,
 			path:   "/",
 		},
 		{
@@ -333,6 +380,15 @@ func TestRouter_findRoute(t *testing.T) {
 			method: http.MethodGet,
 			path:   "/param/:id/*",
 		},
+		// 正则
+		{
+			method: http.MethodDelete,
+			path:   "/reg/:id(.*)",
+		},
+		{
+			method: http.MethodDelete,
+			path:   "/:id([0-9]+)/home",
+		},
 	}
 
 	testRouter := newRouter()
@@ -364,7 +420,7 @@ func TestRouter_findRoute(t *testing.T) {
 		{
 			name:   "root",
 			expect: true,
-			method: http.MethodDelete,
+			method: http.MethodConnect,
 			path:   "/",
 			info: &matchInfo{
 				n: &node{
@@ -393,11 +449,9 @@ func TestRouter_findRoute(t *testing.T) {
 			info: &matchInfo{
 				n: &node{
 					path: "order",
-					children: map[string]*node{
-						"detail": {
-							path:    "detail",
-							handler: fakeHandleFunc,
-						},
+					wildCardChild: &node{
+						path:    "*",
+						handler: fakeHandleFunc,
 					},
 				},
 			},
@@ -405,11 +459,11 @@ func TestRouter_findRoute(t *testing.T) {
 		{
 			name:   "depth two",
 			expect: true,
-			method: http.MethodGet,
-			path:   "/order/detail",
+			method: http.MethodPost,
+			path:   "/order/create",
 			info: &matchInfo{
 				n: &node{
-					path:    "detail",
+					path:    "create",
 					handler: fakeHandleFunc,
 				},
 			},
@@ -451,13 +505,13 @@ func TestRouter_findRoute(t *testing.T) {
 			},
 		},
 		{
-			name:   "paramChild /order/detail/:id",
+			name:   "paramChild /param/:id/detail",
 			expect: true,
-			method: http.MethodPost,
-			path:   "/order/detail/2",
+			method: http.MethodGet,
+			path:   "/param/2/detail",
 			info: &matchInfo{
 				n: &node{
-					path:    ":id",
+					path:    "detail",
 					handler: fakeHandleFunc,
 				},
 				pathParams: map[string]string{

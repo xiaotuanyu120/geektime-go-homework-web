@@ -11,7 +11,15 @@ type router struct {
 }
 
 type node struct {
-	path     string
+	// regular path
+	// or param path
+	// or regex match string
+	path string
+
+	// used by paramChild and regChild
+	pathParam string
+
+	handler  handleFunc
 	children map[string]*node // children path => children node
 
 	// wild card child: /order/detail/*
@@ -20,7 +28,8 @@ type node struct {
 	// parameter child: /order/detail/:id
 	paramChild *node
 
-	handler handleFunc
+	// regex child: /reg/:id(^[0-9]+)
+	regChild *node
 }
 
 func newRouter() *router {
@@ -84,8 +93,13 @@ func (n *node) childOrCreate(seg string) *node {
 	if seg == "*" {
 		if n.paramChild != nil {
 			panic(fmt.Sprintf(
-				`Parameter Child and Wild Card Child only can not exist at the same time: 
-paramChild %s already exist!`, seg))
+				`paramChild and wildCardChild can not exist at the same time: paramChild :%s already exist!`,
+				n.paramChild.path))
+		}
+		if n.regChild != nil {
+			panic(fmt.Sprintf(
+				`regChild and wildCardChild can not exist at the same time: regChild %s already exist!`,
+				n.regChild.path))
 		}
 		if n.wildCardChild == nil {
 			n.wildCardChild = &node{path: seg}
@@ -93,16 +107,39 @@ paramChild %s already exist!`, seg))
 		return n.wildCardChild
 	}
 
-	// go to paramChild
+	// go to paramChild and regChild
 	if seg[0] == ':' {
 		if n.wildCardChild != nil {
 			panic(fmt.Sprintf(
-				`Parameter Child and Wild Card Child only can not exist at the same time: 
-wildCardChild %s already exist!`, seg))
+				`wildCardChild and paramChild can not exist at the same time: wildCardChild %s already exist!`,
+				n.wildCardChild.path))
+		}
+
+		// go to regChild
+		if seg[len(seg)-1] == ')' {
+			if n.paramChild != nil {
+				panic(fmt.Sprintf(
+					`paramChild and regChild can not exist at the same time: paramChild %s already exist!`,
+					n.paramChild.path))
+			}
+
+			if n.regChild == nil {
+				// get "(.*)" from ":username(.*)"
+				param := "(" + strings.SplitN(seg, "(", 2)[1]
+				n.regChild = &node{path: seg, pathParam: param}
+			}
+			return n.regChild
+		}
+
+		// go to paramChild
+		if n.regChild != nil {
+			panic(fmt.Sprintf(
+				`regChild and wildCardChild can not exist at the same time: regChild %s already exist!`,
+				n.regChild.path))
 		}
 
 		if n.paramChild == nil {
-			n.paramChild = &node{path: seg}
+			n.paramChild = &node{path: seg, pathParam: seg[1:]}
 		}
 		return n.paramChild
 	}
@@ -148,7 +185,7 @@ func (r *router) findRoute(method string, path string) (*matchInfo, bool) {
 	var tailWildCardNode *node
 	for _, seg := range segs {
 		// regular match
-		child, isParamChild, found := currentNode.childOf(seg)
+		child, withParam, found := currentNode.childOf(seg)
 
 		// try to cache tail wild card node
 		wcNode, twcFound := currentNode.wildCardChildOf()
@@ -157,11 +194,11 @@ func (r *router) findRoute(method string, path string) (*matchInfo, bool) {
 		}
 
 		// collect the path params in the request path
-		if isParamChild {
+		if withParam {
 			if pathParams == nil {
 				pathParams = make(map[string]string)
 			}
-			pathParams[child.path[1:]] = seg
+			pathParams[child.pathParam] = seg
 		}
 
 		if !found {
@@ -178,29 +215,54 @@ func (r *router) findRoute(method string, path string) (*matchInfo, bool) {
 	return &matchInfo{n: currentNode, pathParams: pathParams}, true
 }
 
-func (n *node) childOf(path string) (node *node, isParamChild bool, found bool) {
+func (n *node) childOf(path string) (node *node, withParam bool, found bool) {
 	// 1. check children
-	// 2. check paramChild
+	// 2. check regChild
+	// 3. check paramChild
 	// at last: check wildCardChild
+
 	if n.children == nil {
+		// How does children is nil?
+		// check regChild
+		if n.regChild != nil {
+			return n.regChild, true, true
+		}
+
+		// check paramChild
 		if n.paramChild != nil {
 			return n.paramChild, true, true
 		}
+
+		// at last: return wildCardChild
 		return n.wildCardChild, false, n.wildCardChild != nil
 	}
+
 	child, ok := n.children[path]
 	if !ok {
+		// How does regular child not found
+		// check regChild
+		if n.regChild != nil {
+			return n.regChild, true, true
+		}
+
+		// check paramChild
 		if n.paramChild != nil {
 			return n.paramChild, true, true
 		}
+
+		// at last: return wildCardChild
 		return n.wildCardChild, false, n.wildCardChild != nil
 	}
+
+	// regular child found, return it
 	return child, false, ok
 }
 
 func (n *node) wildCardChildOf() (node *node, found bool) {
 	if n.wildCardChild != nil {
-		return n.wildCardChild, true
+		if n.wildCardChild.handler != nil {
+			return n.wildCardChild, true
+		}
 	}
 	return n.wildCardChild, false
 }
