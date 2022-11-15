@@ -1,11 +1,18 @@
 package web
 
-import "fmt"
+import (
+	"fmt"
+	"regexp"
+)
 
 func test() {
-	testStr := ":id"
-	if string(testStr[0]) == ":" {
-		fmt.Println("yes")
+	testStr := "1"
+	matchRule := "([0-9]+)"
+	matched, err := regexp.Match(matchRule, []byte(testStr))
+	if err != nil {
+		fmt.Println(err.Error())
 	}
-	fmt.Println(string(testStr[0]))
+	if matched {
+		fmt.Println("matched")
+	}
 }

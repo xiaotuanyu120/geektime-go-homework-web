@@ -21,7 +21,10 @@ func TestServer(t *testing.T) {
 	})
 
 	s.Get("/user", func(ctx *Context) {
-		fmt.Println("something")
+		_, err := ctx.Resp.Write([]byte("hello, /user"))
+		if err != nil {
+			return
+		}
 	})
 
 	s.Get("/order/detail", func(ctx *Context) {
@@ -52,7 +55,7 @@ func TestServer(t *testing.T) {
 		}
 	})
 
-	s.Get("/user/:userid([0-9]+)", func(ctx *Context) {
+	s.Get("/user/:userid(^[0-9]+$)", func(ctx *Context) {
 		_, err := ctx.Resp.Write([]byte(fmt.Sprintf("hello, your user id is %s", ctx.PathParams["userid"])))
 		if err != nil {
 			return

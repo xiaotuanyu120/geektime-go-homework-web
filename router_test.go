@@ -180,14 +180,14 @@ func TestRouter_addRoute(t *testing.T) {
 					"reg": {
 						path: "reg",
 						regChild: &node{
-							path:      "(.*)",
+							path:      ":id(.*)",
 							pathParam: "id",
 							handler:   fakeHandleFunc,
 						},
 					},
 				},
 				regChild: &node{
-					path:      "(^.+$)",
+					path:      ":name(^.+$)",
 					pathParam: "name",
 					children: map[string]*node{
 						"abc": {

@@ -2,6 +2,7 @@ package web
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -125,7 +126,7 @@ func (n *node) childOrCreate(seg string) *node {
 
 			if n.regChild == nil {
 				// get "(.*)" from ":username(.*)"
-				param := "(" + strings.SplitN(seg, "(", 2)[1]
+				param := strings.SplitN(seg, "(", 2)[0][1:]
 				n.regChild = &node{path: seg, pathParam: param}
 			}
 			return n.regChild
@@ -225,7 +226,14 @@ func (n *node) childOf(path string) (node *node, withParam bool, found bool) {
 		// How does children is nil?
 		// check regChild
 		if n.regChild != nil {
-			return n.regChild, true, true
+			matchRule := "(" + strings.SplitN(n.regChild.path, "(", 2)[1]
+			matched, err := regexp.Match(matchRule, []byte(path))
+			if err != nil {
+				return nil, false, false
+			}
+			if matched {
+				return n.regChild, true, true
+			}
 		}
 
 		// check paramChild
@@ -242,7 +250,14 @@ func (n *node) childOf(path string) (node *node, withParam bool, found bool) {
 		// How does regular child not found
 		// check regChild
 		if n.regChild != nil {
-			return n.regChild, true, true
+			matchRule := "(" + strings.SplitN(n.path, "(", 2)[1]
+			matched, err := regexp.Match(matchRule, []byte(n.path))
+			if err != nil {
+				return nil, false, false
+			}
+			if matched {
+				return n.regChild, true, true
+			}
 		}
 
 		// check paramChild
