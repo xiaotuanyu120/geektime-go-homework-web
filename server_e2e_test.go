@@ -20,6 +20,14 @@ func TestServer(t *testing.T) {
 		}
 	})
 
+	s.addRoute(http.MethodPost, "/", func(ctx *Context) {
+		ctx.Req.ParseForm()
+		_, err := ctx.Resp.Write([]byte("homepage"))
+		if err != nil {
+			return
+		}
+	})
+
 	s.Get("/user", func(ctx *Context) {
 		_, err := ctx.Resp.Write([]byte("hello, /user"))
 		if err != nil {
